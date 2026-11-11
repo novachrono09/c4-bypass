@@ -7,7 +7,7 @@
     const FAB_ID = 'c4-bypass-fab';
     const STYLE_ID = 'c4-bypass-styles';
 
-    // Remove old instances if re-triggered
+    // Clean re-entry
     const oldHud = document.getElementById(HUD_ID);
     if (oldHud) oldHud.remove();
     const oldFab = document.getElementById(FAB_ID);
@@ -15,31 +15,43 @@
     const oldStyle = document.getElementById(STYLE_ID);
     if (oldStyle) oldStyle.remove();
 
-    // Protocol Sniffer
+    // Protocol Sniffer (Non-blocking, never throws)
     if (!window._c4_trace) {
       window._c4_trace = [];
       const origFetch = window.fetch;
       window.fetch = async function (...args) {
-        const entry = {
-          type: 'fetch',
-          url: typeof args[0] === 'string' ? args[0] : (args[0]?.url || String(args[0])),
-          method: args[1]?.method || 'GET',
-          headers: args[1]?.headers || {},
-          body: args[1]?.body ? String(args[1].body) : null,
-          timestamp: Date.now()
-        };
+        const urlStr = typeof args[0] === 'string' ? args[0] : (args[0]?.url || String(args[0]));
+        const methodStr = args[1]?.method || 'GET';
+        let res;
         try {
-          const res = await origFetch.apply(this, args);
-          const clone = res.clone();
-          try { entry.response = await clone.text(); } catch (_) { entry.response = '<stream>'; }
-          entry.status = res.status;
-          window._c4_trace.push(entry);
-          return res;
-        } catch (err) {
-          entry.error = err.message;
-          window._c4_trace.push(entry);
-          throw err;
+          res = await origFetch.apply(this, args);
+        } catch (fetchErr) {
+          window._c4_trace.push({
+            url: urlStr,
+            method: methodStr,
+            error: fetchErr.message,
+            timestamp: Date.now()
+          });
+          throw fetchErr;
         }
+
+        try {
+          const entry = {
+            url: urlStr,
+            method: methodStr,
+            status: res.status,
+            timestamp: Date.now()
+          };
+          if (typeof res.clone === 'function') {
+            try {
+              const c = res.clone();
+              c.text().then(t => { entry.response = t; }).catch(() => {});
+            } catch (_) {}
+          }
+          window._c4_trace.push(entry);
+        } catch (_) {}
+
+        return res;
       };
     }
 
@@ -61,7 +73,6 @@
         font-family: inherit !important;
       }
 
-      /* Floating Mini FAB */
       #${FAB_ID} {
         position: fixed !important;
         top: 14px !important;
@@ -92,7 +103,6 @@
         color: #ffffff !important;
       }
 
-      /* Main HUD Window */
       #${HUD_ID} {
         position: fixed !important;
         top: 14px !important;
@@ -140,7 +150,6 @@
       }
       .c4-close-btn:hover { color: #f43f5e !important; }
 
-      /* Visual Card with Vector Anime Artwork */
       .c4-banner-box {
         position: relative !important;
         width: 100% !important;
@@ -183,7 +192,6 @@
         text-shadow: 0 2px 6px rgba(0,0,0,0.9) !important;
       }
 
-      /* Control Deck */
       .c4-deck {
         padding: 12px !important;
         display: flex !important;
@@ -369,8 +377,8 @@
         </div>
 
         <div class="c4-pill-grid">
-          <button type="button" class="c4-pill-btn active" data-s="0">0s (Inst)</button>
-          <button type="button" class="c4-pill-btn" data-s="5">5s</button>
+          <button type="button" class="c4-pill-btn" data-s="0">0s (Inst)</button>
+          <button type="button" class="c4-pill-btn active" data-s="5">5s (Safe)</button>
           <button type="button" class="c4-pill-btn" data-s="15">15s</button>
           <button type="button" class="c4-pill-btn" data-s="30">30s</button>
         </div>
@@ -378,7 +386,7 @@
         <div class="c4-interval-row">
           <span>Custom Interval</span>
           <div>
-            <input class="c4-interval-input" id="c4-custom-sec" type="number" min="0" value="0">
+            <input class="c4-interval-input" id="c4-custom-sec" type="number" min="0" value="5">
             <span style="margin-left:4px;color:#a1a1aa;font-weight:700;">SEC</span>
           </div>
         </div>
@@ -471,6 +479,7 @@
       const sec = String(s % 60).padStart(2, '0');
       clock.textContent = `${min}:${sec}`;
     }
+    setTimeDisplay(parseInt(inSec.value, 10) || 5);
 
     btnDump.onclick = () => {
       const data = JSON.stringify(window._c4_trace, null, 2);
@@ -506,113 +515,176 @@
     btnRun.onclick = async () => {
       const totalDuration = parseInt(inSec.value, 10) || 0;
       btnRun.disabled = true;
-      bar.style.width = '12%';
-      txtMsg.textContent = '> probing link session...';
+      bar.style.width = '10%';
+      txtMsg.textContent = '> resolving link session...';
 
       try {
         const handled = await runTrpcBypass(totalDuration);
         if (!handled) {
-          txtMsg.textContent = '> pulsing dom triggers...';
+          txtMsg.textContent = '> switching to DOM triggers...';
           runDomFallback();
         }
       } catch (err) {
         txtMsg.textContent = '> err: ' + (err.message || 'failed');
         btnRun.disabled = false;
+        runDomFallback();
       }
     };
 
     async function runTrpcBypass(delaySec) {
-      let sessionRes;
+      // 1. Resolve Token from URL query parameters (?t= or ?token=) or /api/session-info
+      const searchParams = new URLSearchParams(window.location.search);
+      let token = searchParams.get('t') || searchParams.get('token');
+      let currentStageIndex = parseInt(searchParams.get('i'), 10) || 1;
+      let totalStages = 3;
+
       try {
-        sessionRes = await fetch(`${window.location.origin}/api/session-info`, {
+        const sessionRes = await fetch(`${window.location.origin}/api/session-info`, {
           method: 'GET',
           credentials: 'include'
         });
-      } catch (_) {
+        if (sessionRes && sessionRes.ok) {
+          const sData = await sessionRes.json();
+          if (sData.sessionToken || sData.token) token = sData.sessionToken || sData.token;
+          if (sData.totalStage) totalStages = sData.totalStage;
+          if (sData.stageNumber) currentStageIndex = sData.stageNumber;
+        }
+      } catch (_) {}
+
+      if (!token) {
+        txtMsg.textContent = '> no session token found in session-info or URL.';
         return false;
       }
 
-      if (!sessionRes || !sessionRes.ok) return false;
-      const sessionData = await sessionRes.json();
-      const token = sessionData.sessionToken || sessionData.token;
-      const totalStages = sessionData.totalStage || 1;
-
-      if (!token) return false;
-
-      txtMsg.textContent = `> trpc session: ${totalStages} stage(s)`;
+      txtMsg.textContent = `> token acquired. [${currentStageIndex}/${totalStages}]`;
       bar.style.width = '25%';
 
-      let remaining = delaySec;
-      const startTime = Date.now();
-      const timer = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        remaining = Math.max(0, delaySec - elapsed);
-        setTimeDisplay(remaining);
-        const pct = Math.min(100, Math.floor((elapsed / Math.max(1, delaySec)) * 100));
-        bar.style.width = `${Math.max(25, pct)}%`;
-      }, 200);
-
-      let destinationLink = null;
-      const stageInterval = delaySec > 0 ? (delaySec * 1000) / totalStages : 0;
-
-      for (let stage = 1; stage <= totalStages; stage++) {
-        txtMsg.textContent = `> advancing stage [${stage}/${totalStages}]...`;
-
-        const payload = { '0': { json: { token, stageId: stage } } };
-        const endpoint = `${window.location.origin}/api/trpc/linkSession.nextStage?batch=1&input=${encodeURIComponent(JSON.stringify(payload))}`;
-
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'trpc-accept': 'application/jsonl',
-            'x-trpc-source': 'nextjs-react'
-          },
-          body: JSON.stringify(payload)
+      // Delay countdown if user specified delay
+      if (delaySec > 0) {
+        let remaining = delaySec;
+        const startTime = Date.now();
+        await new Promise(resolve => {
+          const timer = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            remaining = Math.max(0, delaySec - elapsed);
+            setTimeDisplay(remaining);
+            const pct = Math.min(65, Math.floor((elapsed / Math.max(1, delaySec)) * 65));
+            bar.style.width = `${Math.max(25, pct)}%`;
+            if (remaining <= 0) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, 200);
         });
-
-        if (!res.ok) throw new Error(`stage ${stage} http ${res.status}`);
-        const rawText = await res.text();
-
-        try {
-          const parsed = JSON.parse(rawText);
-          destinationLink = parsed[0]?.result?.data?.json?.destinationLink || parsed.destinationLink || parsed.url;
-        } catch (_) {
-          const m = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
-          if (m) destinationLink = m[1].replace(/\\/g, '');
-        }
-
-        if (stage < totalStages && stageInterval > 0) {
-          await new Promise(r => setTimeout(r, stageInterval));
-        }
       }
 
-      clearInterval(timer);
-      setTimeDisplay(0);
+      // Execute nextStage call
+      // In Next.js tRPC: useQuery procedures are HTTP GET requests with &input=
+      // Schema requires { token, progress, stageId }
+      txtMsg.textContent = `> advancing stage [${currentStageIndex}]...`;
+      bar.style.width = '75%';
+
+      const payload = {
+        '0': {
+          json: {
+            token: token,
+            progress: currentStageIndex + 1,
+            stageId: currentStageIndex
+          }
+        }
+      };
+      const jsonStr = JSON.stringify(payload);
+      const endpoint = `${window.location.origin}/api/trpc/linkSession.nextStage?batch=1&input=${encodeURIComponent(jsonStr)}`;
+
+      let res;
+      try {
+        // Standard tRPC Query is GET
+        res = await fetch(endpoint, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'trpc-accept': 'application/jsonl',
+            'x-trpc-source': 'nextjs-react'
+          }
+        });
+
+        // If GET returns 405 Method Not Allowed, fallback to POST
+        if (res.status === 405) {
+          res = await fetch(endpoint, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'trpc-accept': 'application/jsonl',
+              'x-trpc-source': 'nextjs-react'
+            },
+            body: jsonStr
+          });
+        }
+      } catch (networkErr) {
+        throw new Error('fetch error: ' + networkErr.message);
+      }
+
+      if (!res.ok) {
+        throw new Error(`stage http ${res.status}`);
+      }
+
+      const rawText = await res.text();
+      let destinationLink = null;
+      let nextUrl = null;
+
+      try {
+        const parsed = JSON.parse(rawText);
+        const stageData = parsed[0]?.result?.data?.json || parsed.result?.data?.json || parsed[0]?.result?.data || parsed;
+        destinationLink = stageData.destinationLink || stageData.dest || null;
+        nextUrl = stageData.url || null;
+      } catch (_) {
+        const mDest = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
+        const mUrl = rawText.match(/"url"\s*:\s*"([^"]+)"/);
+        if (mDest) destinationLink = mDest[1].replace(/\\/g, '');
+        if (mUrl) nextUrl = mUrl[1].replace(/\\/g, '');
+      }
+
       bar.style.width = '100%';
       playTone();
 
       if (destinationLink) {
-        txtMsg.textContent = '> resolved. redirecting...';
+        txtMsg.textContent = '> final key reached. redirecting...';
         setTimeout(() => { window.location.href = destinationLink; }, 400);
-      } else {
-        txtMsg.textContent = '> session complete. reloading...';
-        setTimeout(() => { window.location.reload(); }, 600);
+        return true;
       }
+
+      if (nextUrl) {
+        // Multi-hop intermediate redirect: forward token to next stage
+        const fullNext = nextUrl.includes('?t=') ? nextUrl : `${nextUrl}?t=${encodeURIComponent(token)}&i=${currentStageIndex + 1}`;
+        txtMsg.textContent = `> stage [${currentStageIndex}] done. hopping to next...`;
+        setTimeout(() => { window.location.href = fullNext; }, 400);
+        return true;
+      }
+
+      txtMsg.textContent = '> session advanced. reloading...';
+      setTimeout(() => { window.location.reload(); }, 600);
       return true;
     }
 
     function runDomFallback() {
       let triggered = false;
-      ['timer', 'countdown', 'seconds'].forEach(id => {
+
+      // Reset countdown text
+      ['timer', 'countdown', 'seconds', 'count'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.textContent = '0';
       });
 
+      // Target buttons found in Next.js bundle & DOM
       const selectors = [
+        '#full', 'button#full',
+        '#start', 'button#start',
         '#btn-main', '#get-link', '#continue', '.btn-captcha',
-        'a[href*="/api/redirect"]', 'button[disabled]'
+        'button[componente="redirect-button"]',
+        'button[componente="finish-button"]',
+        'a[href*="/api/redirect"]', 'a[href*="destination"]',
+        'button[disabled]'
       ];
 
       for (const sel of selectors) {
@@ -626,7 +698,7 @@
       }
 
       bar.style.width = '100%';
-      txtMsg.textContent = triggered ? '> dom pulsed.' : '> no targets.';
+      txtMsg.textContent = triggered ? '> dom trigger pulsed.' : '> no targets found.';
       playTone();
     }
 
