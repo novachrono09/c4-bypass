@@ -403,15 +403,31 @@
     `;
     targetParent.appendChild(hud);
 
+    // Isolate UI Events from page clickjackers & ad popunders
+    function isolate(el) {
+      ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(evt => {
+        el.addEventListener(evt, e => {
+          e.stopPropagation();
+        }, { passive: false });
+      });
+    }
+    isolate(hud);
+    isolate(fab);
+
     // Toggle HUD & FAB
-    fab.onclick = () => {
+    fab.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
       hud.style.display = 'flex';
       fab.style.display = 'none';
-    };
-    hud.querySelector('#c4-btn-close').onclick = () => {
+    });
+
+    hud.querySelector('#c4-btn-close').addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
       hud.style.display = 'none';
       fab.style.display = 'flex';
-    };
+    });
 
     // Touch & Mouse Dragging
     const dragBar = hud.querySelector('#c4-drag-header');
@@ -461,12 +477,14 @@
     }, 400);
 
     hud.querySelectorAll('.c4-pill-btn').forEach(pill => {
-      pill.onclick = () => {
+      pill.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
         hud.querySelectorAll('.c4-pill-btn').forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         inSec.value = pill.dataset.s;
         setTimeDisplay(+pill.dataset.s);
-      };
+      });
     });
 
     inSec.oninput = () => {
@@ -481,7 +499,9 @@
     }
     setTimeDisplay(parseInt(inSec.value, 10) || 5);
 
-    btnDump.onclick = () => {
+    btnDump.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
       const data = JSON.stringify(window._c4_trace, null, 2);
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(data).then(() => {
@@ -494,7 +514,7 @@
         console.log('C4 TRACE DUMP:', data);
         txtMsg.textContent = '> trace logged to console.';
       }
-    };
+    });
 
     function playTone() {
       try {
@@ -512,31 +532,29 @@
       } catch (_) {}
     }
 
-    btnRun.onclick = async () => {
+    btnRun.addEventListener('click', async e => {
+      e.preventDefault();
+      e.stopPropagation();
       const totalDuration = parseInt(inSec.value, 10) || 0;
       btnRun.disabled = true;
       bar.style.width = '10%';
       txtMsg.textContent = '> resolving link session...';
 
       try {
-        const handled = await runTrpcBypass(totalDuration);
-        if (!handled) {
-          txtMsg.textContent = '> switching to DOM triggers...';
-          runDomFallback();
-        }
+        await runTrpcBypass(totalDuration);
       } catch (err) {
         txtMsg.textContent = '> err: ' + (err.message || 'failed');
         btnRun.disabled = false;
-        runDomFallback();
       }
-    };
+    });
 
     async function runTrpcBypass(delaySec) {
       // 1. Resolve Token from URL query parameters (?t= or ?token=) or /api/session-info
       const searchParams = new URLSearchParams(window.location.search);
       let token = searchParams.get('t') || searchParams.get('token');
       let currentStageIndex = parseInt(searchParams.get('i'), 10) || 1;
-      let totalStages = 3;
+      let totalStages = 2;
+      let currentStageId = currentStageIndex;
 
       try {
         const sessionRes = await fetch(`${window.location.origin}/api/session-info`, {
@@ -548,158 +566,165 @@
           if (sData.sessionToken || sData.token) token = sData.sessionToken || sData.token;
           if (sData.totalStage) totalStages = sData.totalStage;
           if (sData.stageNumber) currentStageIndex = sData.stageNumber;
+          if (sData.stageId) currentStageId = sData.stageId;
         }
       } catch (_) {}
 
       if (!token) {
-        txtMsg.textContent = '> no session token found in session-info or URL.';
+        txtMsg.textContent = '> session token not found. are you on shortener page?';
+        btnRun.disabled = false;
         return false;
       }
 
       txtMsg.textContent = `> token acquired. [${currentStageIndex}/${totalStages}]`;
-      bar.style.width = '25%';
+      bar.style.width = '20%';
 
-      // Delay countdown if user specified delay
-      if (delaySec > 0) {
-        let remaining = delaySec;
-        const startTime = Date.now();
-        await new Promise(resolve => {
-          const timer = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            remaining = Math.max(0, delaySec - elapsed);
-            setTimeDisplay(remaining);
-            const pct = Math.min(65, Math.floor((elapsed / Math.max(1, delaySec)) * 65));
-            bar.style.width = `${Math.max(25, pct)}%`;
-            if (remaining <= 0) {
-              clearInterval(timer);
-              resolve();
-            }
-          }, 200);
-        });
-      }
+      let destinationLink = null;
+      const numStagesToRun = Math.max(1, (totalStages - currentStageIndex + 1));
+      const perStageDelay = delaySec > 0 ? delaySec / numStagesToRun : 0;
 
-      // Execute nextStage call
-      // In Next.js tRPC: useQuery procedures are HTTP GET requests with &input=
-      // Schema requires { token, progress, stageId }
-      txtMsg.textContent = `> advancing stage [${currentStageIndex}]...`;
-      bar.style.width = '75%';
+      // In-place multi-stage bypass loop: NEVER RELOAD, NEVER NAVIGATE UNTIL FINAL KEY
+      for (let stage = currentStageIndex; stage <= totalStages; stage++) {
+        txtMsg.textContent = `> advancing stage [${stage}/${totalStages}]...`;
 
-      const payload = {
-        '0': {
-          json: {
-            token: token,
-            progress: currentStageIndex + 1,
-            stageId: currentStageIndex
-          }
-        }
-      };
-      const jsonStr = JSON.stringify(payload);
-      const endpoint = `${window.location.origin}/api/trpc/linkSession.nextStage?batch=1&input=${encodeURIComponent(jsonStr)}`;
-
-      let res;
-      try {
-        // Standard tRPC Query is GET
-        res = await fetch(endpoint, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'trpc-accept': 'application/jsonl',
-            'x-trpc-source': 'nextjs-react'
-          }
-        });
-
-        // If GET returns 405 Method Not Allowed, fallback to POST
-        if (res.status === 405) {
-          res = await fetch(endpoint, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'trpc-accept': 'application/jsonl',
-              'x-trpc-source': 'nextjs-react'
-            },
-            body: jsonStr
+        // Optional per-stage interval countdown
+        if (perStageDelay > 0) {
+          let remaining = Math.ceil(perStageDelay);
+          const startTime = Date.now();
+          await new Promise(resolve => {
+            const timer = setInterval(() => {
+              const elapsed = Math.floor((Date.now() - startTime) / 1000);
+              remaining = Math.max(0, Math.ceil(perStageDelay - elapsed));
+              setTimeDisplay(remaining);
+              if (Date.now() - startTime >= perStageDelay * 1000) {
+                clearInterval(timer);
+                resolve();
+              }
+            }, 100);
           });
         }
-      } catch (networkErr) {
-        throw new Error('fetch error: ' + networkErr.message);
-      }
 
-      if (!res.ok) {
-        throw new Error(`stage http ${res.status}`);
-      }
-
-      const rawText = await res.text();
-      let destinationLink = null;
-      let nextUrl = null;
-
-      try {
-        const parsed = JSON.parse(rawText);
-        const stageData = parsed[0]?.result?.data?.json || parsed.result?.data?.json || parsed[0]?.result?.data || parsed;
-        destinationLink = stageData.destinationLink || stageData.dest || null;
-        nextUrl = stageData.url || null;
-      } catch (_) {
-        const mDest = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
-        const mUrl = rawText.match(/"url"\s*:\s*"([^"]+)"/);
-        if (mDest) destinationLink = mDest[1].replace(/\\/g, '');
-        if (mUrl) nextUrl = mUrl[1].replace(/\\/g, '');
-      }
-
-      bar.style.width = '100%';
-      playTone();
-
-      if (destinationLink) {
-        txtMsg.textContent = '> final key reached. redirecting...';
-        setTimeout(() => { window.location.href = destinationLink; }, 400);
-        return true;
-      }
-
-      if (nextUrl) {
-        // Multi-hop intermediate redirect: forward token to next stage
-        const fullNext = nextUrl.includes('?t=') ? nextUrl : `${nextUrl}?t=${encodeURIComponent(token)}&i=${currentStageIndex + 1}`;
-        txtMsg.textContent = `> stage [${currentStageIndex}] done. hopping to next...`;
-        setTimeout(() => { window.location.href = fullNext; }, 400);
-        return true;
-      }
-
-      txtMsg.textContent = '> session advanced. reloading...';
-      setTimeout(() => { window.location.reload(); }, 600);
-      return true;
-    }
-
-    function runDomFallback() {
-      let triggered = false;
-
-      // Reset countdown text
-      ['timer', 'countdown', 'seconds', 'count'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = '0';
-      });
-
-      // Target buttons found in Next.js bundle & DOM
-      const selectors = [
-        '#full', 'button#full',
-        '#start', 'button#start',
-        '#btn-main', '#get-link', '#continue', '.btn-captcha',
-        'button[componente="redirect-button"]',
-        'button[componente="finish-button"]',
-        'a[href*="/api/redirect"]', 'a[href*="destination"]',
-        'button[disabled]'
-      ];
-
-      for (const sel of selectors) {
-        document.querySelectorAll(sel).forEach(t => {
-          if (t.disabled) t.disabled = false;
-          if (typeof t.click === 'function') {
-            t.click();
-            triggered = true;
+        const payload = {
+          '0': {
+            json: {
+              token: token,
+              progress: stage + 1,
+              stageId: currentStageId
+            }
           }
-        });
+        };
+        const jsonStr = JSON.stringify(payload);
+        const endpoint = `${window.location.origin}/api/trpc/linkSession.nextStage?batch=1&input=${encodeURIComponent(jsonStr)}`;
+
+        let res;
+        try {
+          res = await fetch(endpoint, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              'trpc-accept': 'application/jsonl',
+              'x-trpc-source': 'nextjs-react'
+            }
+          });
+
+          if (res.status === 405) {
+            res = await fetch(endpoint, {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                'trpc-accept': 'application/jsonl',
+                'x-trpc-source': 'nextjs-react'
+              },
+              body: jsonStr
+            });
+          }
+        } catch (networkErr) {
+          throw new Error('stage fetch err: ' + networkErr.message);
+        }
+
+        if (!res.ok) {
+          throw new Error(`stage ${stage} http ${res.status}`);
+        }
+
+        const rawText = await res.text();
+        let stageData = null;
+
+        try {
+          const parsed = JSON.parse(rawText);
+          stageData = parsed[0]?.result?.data?.json || parsed.result?.data?.json || parsed[0]?.result?.data || parsed;
+        } catch (_) {
+          const mDest = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
+          const mUrl = rawText.match(/"url"\s*:\s*"([^"]+)"/);
+          stageData = {
+            destinationLink: mDest ? mDest[1].replace(/\\/g, '') : null,
+            url: mUrl ? mUrl[1].replace(/\\/g, '') : null
+          };
+        }
+
+        if (stageData) {
+          if (stageData.destinationLink) {
+            destinationLink = stageData.destinationLink;
+            break;
+          }
+          if (stageData.token) token = stageData.token;
+          if (stageData.stageId) currentStageId = stageData.stageId;
+          else currentStageId = stage + 1;
+          if (stageData.url && stageData.url.includes('?t=')) {
+            try {
+              const u = new URL(stageData.url, window.location.origin);
+              const ut = u.searchParams.get('t');
+              if (ut) token = ut;
+            } catch (_) {}
+          }
+        } else {
+          currentStageId = stage + 1;
+        }
+
+        const progressPct = Math.min(95, Math.floor(20 + ((stage - currentStageIndex + 1) / numStagesToRun) * 75));
+        bar.style.width = `${progressPct}%`;
       }
 
+      // Check final destination
+      if (destinationLink) {
+        bar.style.width = '100%';
+        setTimeDisplay(0);
+        playTone();
+        txtMsg.textContent = '> final key reached! redirecting...';
+        setTimeout(() => {
+          window.location.href = destinationLink;
+        }, 500);
+        return true;
+      }
+
+      // If loop finished but destinationLink was not directly returned, check session-info once
+      try {
+        const finalCheck = await fetch(`${window.location.origin}/api/session-info`, {
+          method: 'GET',
+          credentials: 'include'
+        });
+        if (finalCheck && finalCheck.ok) {
+          const fData = await finalCheck.json();
+          if (fData.destinationLink) {
+            bar.style.width = '100%';
+            setTimeDisplay(0);
+            playTone();
+            txtMsg.textContent = '> final key reached! redirecting...';
+            setTimeout(() => {
+              window.location.href = fData.destinationLink;
+            }, 500);
+            return true;
+          }
+        }
+      } catch (_) {}
+
+      // Finished without destinationLink — keep HUD open, never reload
       bar.style.width = '100%';
-      txtMsg.textContent = triggered ? '> dom trigger pulsed.' : '> no targets found.';
+      setTimeDisplay(0);
       playTone();
+      txtMsg.textContent = '> all stages sent. key pending on server.';
+      btnRun.disabled = false;
+      return true;
     }
 
     console.log('[c4] ARGON controller mounted successfully.');
