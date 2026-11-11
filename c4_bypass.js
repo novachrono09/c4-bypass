@@ -1,18 +1,13 @@
-// C4 / ARGON — Android & Desktop Universal Luxury Anime Shortener Bypass HUD
-// Zero CSP dependency, zero external network dependency, touch-enabled.
 (function () {
   'use strict';
 
-  const HUD_ID = 'c4-bypass-hud';
-  const STYLE_ID = 'c4-bypass-styles';
+  const HOST_ID = 'c4-bypass-host';
+  const existing = document.getElementById(HOST_ID);
+  if (existing) {
+    existing.remove();
+  }
 
-  // Always force clean re-inject so multiple taps don't get stuck
-  const prevHud = document.getElementById(HUD_ID);
-  if (prevHud) prevHud.remove();
-  const prevStyle = document.getElementById(STYLE_ID);
-  if (prevStyle) prevStyle.remove();
-
-  // --- Live Protocol Sniffer ---
+  // Sniffer
   if (!window._c4_trace) {
     window._c4_trace = [];
     const origFetch = window.fetch;
@@ -40,187 +35,45 @@
     };
   }
 
-  // --- Theme Styles ---
+  const host = document.createElement('div');
+  host.id = HOST_ID;
+  host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;pointer-events:none;';
+
+  const shadow = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+
   const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
-    #${HUD_ID} {
-      position: fixed !important; top: 12px !important; right: 12px !important;
-      left: auto !important; bottom: auto !important;
-      width: min(320px, calc(100vw - 24px)) !important;
-      max-height: 92vh !important;
-      background: #09090b !important;
-      border: 1px solid rgba(255, 255, 255, 0.12) !important;
-      border-radius: 12px !important;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-      color: #f4f4f5 !important;
-      display: flex !important; flex-direction: column !important;
-      overflow: hidden !important; z-index: 2147483647 !important;
-      user-select: none !important; -webkit-user-select: none !important;
-      box-sizing: border-box !important;
-      opacity: 1 !important; visibility: visible !important;
-    }
-    #${HUD_ID} * { box-sizing: border-box !important; }
+  style.textContent=`*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}.c4-fab{position:fixed;top:14px;right:14px;height:38px;padding:0 14px;border-radius:19px;background:#09090b;border:1px solid rgba(244,63,94,0.45);box-shadow:0 8px 24px rgba(0,0,0,0.85),0 0 12px rgba(244,63,94,0.25);display:flex;align-items:center;gap:8px;cursor:pointer;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;transition:transform 0.15s ease,border-color 0.15s ease;}.c4-fab:active{transform:scale(0.96);}.c4-dot{width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;}.c4-fab-txt{font-size:11px;font-weight:800;letter-spacing:1.2px;color:#fff;}.c4-hud{position:fixed;top:60px;right:14px;width:min(320px,calc(100vw - 28px));background:#09090b;border:1px solid rgba(255,255,255,0.14);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,0.95),0 0 0 1px rgba(255,255,255,0.06);color:#f4f4f5;display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;user-select:none;-webkit-user-select:none;animation:c4-slide 0.2s cubic-bezier(0.16,1,0.3,1);}@keyframes c4-slide{from{opacity:0;transform:translateY(-8px) scale(0.98);}to{opacity:1;transform:translateY(0) scale(1);}}.c4-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#121216;border-bottom:1px solid rgba(255,255,255,0.08);cursor:move;touch-action:none;}.c4-title-wrap{display:flex;align-items:center;gap:8px;}.c4-title{font-size:12px;font-weight:800;letter-spacing:1.2px;color:#ffffff;}.c4-close{background:transparent;border:none;color:#71717a;font-size:20px;line-height:1;cursor:pointer;padding:0 4px;transition:color 0.15s ease;}.c4-close:hover{color:#f43f5e;}.c4-banner{position:relative;width:100%;height:110px;background:#18181b;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:12px 14px;}.c4-banner svg{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}.c4-tag{position:relative;z-index:2;align-self:flex-start;background:rgba(0,0,0,0.7);border:1px solid rgba(244,63,94,0.4);border-radius:4px;padding:2px 7px;font-size:9px;font-weight:700;color:#fda4af;letter-spacing:1px;margin-bottom:4px;}.c4-subhead{position:relative;z-index:2;font-size:14px;font-weight:800;color:#ffffff;letter-spacing:0.5px;text-shadow:0 2px 8px rgba(0,0,0,0.9);}.c4-body{padding:14px;display:flex;flex-direction:column;gap:10px;}.c4-clock-box{display:flex;align-items:baseline;justify-content:space-between;padding:8px 12px;background:#121216;border:1px solid rgba(255,255,255,0.08);border-radius:8px;}.c4-clock-lbl{font-size:10px;font-weight:700;color:#71717a;letter-spacing:1px;}.c4-digits{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:24px;font-weight:800;color:#ffffff;font-variant-numeric:tabular-nums;}.c4-pills{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}.c4-pill{background:#18181b;border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#a1a1aa;font-size:11px;font-weight:700;padding:7px 0;text-align:center;cursor:pointer;transition:all 0.15s ease;}.c4-pill.active{background:#fafafa;color:#09090b;border-color:#fff;}.c4-input-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#71717a;font-weight:600;padding:2px 0;}.c4-num-in{width:56px;background:#18181b;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#fafafa;font-family:monospace;font-size:12px;font-weight:700;text-align:center;padding:4px;outline:none;}.c4-btn-exec{width:100%;background:#f43f5e;color:#ffffff;font-weight:800;font-size:12px;letter-spacing:1px;padding:11px 0;border:none;border-radius:8px;cursor:pointer;box-shadow:0 4px 16px rgba(244,63,94,0.35);transition:opacity 0.15s ease;}.c4-btn-exec:active{opacity:0.85;}.c4-btn-exec:disabled{background:#3f3f46;color:#71717a;cursor:not-allowed;box-shadow:none;}.c4-btn-copy{width:100%;background:transparent;color:#a1a1aa;font-size:10px;font-weight:700;padding:7px 0;border:1px solid rgba(255,255,255,0.08);border-radius:6px;cursor:pointer;}.c4-rail{width:100%;height:3px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;}.c4-fill{width:0%;height:100%;background:#f43f5e;transition:width 0.2s linear;}.c4-msg{font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:14px;}`;
+  shadow.appendChild(style);
 
-    .c4-bar-top {
-      display: flex !important; align-items: center !important; justify-content: space-between !important;
-      padding: 8px 12px !important; background: #121216 !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-      cursor: move !important; touch-action: none !important;
-    }
-    .c4-brand-wrap { display: flex !important; align-items: center !important; gap: 7px !important; }
-    .c4-dot-live { width: 6px !important; height: 6px !important; border-radius: 50% !important; background: #10b981 !important; box-shadow: 0 0 6px #10b981 !important; }
-    .c4-brand-txt { font-size: 11px !important; font-weight: 700 !important; letter-spacing: 1.2px !important; color: #fff !important; }
-    .c4-btn-x {
-      background: transparent !important; border: none !important; color: #71717a !important;
-      font-size: 20px !important; line-height: 1 !important; cursor: pointer !important; padding: 0 4px !important;
-    }
-    .c4-btn-x:hover { color: #f43f5e !important; }
+  // Floating Pill Button (Always visible on mobile)
+  const fab = document.createElement('div');
+  fab.className = 'c4-fab';
+  fab.innerHTML = '<div class="c4-dot"></div><span class="c4-fab-txt">ARGON</span>';
+  shadow.appendChild(fab);
 
-    /* Character Visual Card */
-    .c4-visual {
-      position: relative !important; width: 100% !important; height: 110px !important;
-      background: #18181b !important; overflow: hidden !important;
-      display: flex !important; flex-direction: column !important; justify-content: flex-end !important;
-      padding: 10px 12px !important;
-    }
-    .c4-visual img {
-      position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important;
-      object-fit: cover !important; object-position: center 25% !important;
-      opacity: 0.75 !important; pointer-events: none !important;
-    }
-    .c4-visual-mask {
-      position: absolute !important; inset: 0 !important;
-      background: linear-gradient(180deg, rgba(9,9,11,0.1) 0%, rgba(9,9,11,0.92) 100%) !important;
-      pointer-events: none !important;
-    }
-    .c4-tag {
-      position: relative !important; z-index: 2 !important; align-self: flex-start !important;
-      background: rgba(0,0,0,0.65) !important; border: 1px solid rgba(255,255,255,0.15) !important;
-      border-radius: 4px !important; padding: 2px 6px !important;
-      font-size: 9px !important; font-family: monospace !important; color: #e4e4e7 !important;
-      letter-spacing: 1px !important; margin-bottom: 3px !important;
-    }
-    .c4-subhead {
-      position: relative !important; z-index: 2 !important;
-      font-size: 14px !important; font-weight: 700 !important; color: #ffffff !important;
-      letter-spacing: 0.5px !important; text-shadow: 0 2px 6px rgba(0,0,0,0.9) !important;
-    }
-
-    /* Content Area */
-    .c4-content { padding: 12px !important; display: flex !important; flex-direction: column !important; gap: 10px !important; }
-
-    .c4-clock-box {
-      display: flex !important; align-items: baseline !important; justify-content: space-between !important;
-      padding: 8px 12px !important; background: #121216 !important;
-      border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 8px !important;
-    }
-    .c4-clock-lbl { font-size: 10px !important; font-weight: 600 !important; color: #71717a !important; letter-spacing: 1px !important; }
-    .c4-digits {
-      font-family: monospace !important; font-size: 24px !important; font-weight: 700 !important;
-      color: #ffffff !important; font-variant-numeric: tabular-nums !important;
-    }
-
-    .c4-pills { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 5px !important; }
-    .c4-pill {
-      background: #18181b !important; border: 1px solid rgba(255,255,255,0.08) !important;
-      border-radius: 6px !important; color: #a1a1aa !important; font-size: 11px !important;
-      font-weight: 600 !important; padding: 6px 0 !important; text-align: center !important;
-      cursor: pointer !important;
-    }
-    .c4-pill.active { background: #fafafa !important; color: #09090b !important; border-color: #fff !important; }
-
-    .c4-input-row {
-      display: flex !important; align-items: center !important; justify-content: space-between !important;
-      font-size: 11px !important; color: #71717a !important; padding: 2px 0 !important;
-    }
-    .c4-num-in {
-      width: 52px !important; background: #18181b !important; border: 1px solid rgba(255,255,255,0.12) !important;
-      border-radius: 6px !important; color: #fafafa !important; font-family: monospace !important;
-      font-size: 12px !important; text-align: center !important; padding: 3px !important; outline: none !important;
-    }
-
-    .c4-btn-exec {
-      width: 100% !important; background: #f43f5e !important; color: #fff !important;
-      font-weight: 700 !important; font-size: 12px !important; letter-spacing: 0.8px !important;
-      padding: 10px !important; border: none !important; border-radius: 8px !important;
-      cursor: pointer !important; box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3) !important;
-    }
-    .c4-btn-exec:active { opacity: 0.85 !important; }
-    .c4-btn-exec:disabled { background: #3f3f46 !important; color: #71717a !important; cursor: not-allowed !important; box-shadow: none !important; }
-
-    .c4-btn-copy {
-      width: 100% !important; background: transparent !important; color: #a1a1aa !important;
-      font-size: 10px !important; font-weight: 600 !important; padding: 6px !important;
-      border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 6px !important;
-      cursor: pointer !important;
-    }
-
-    .c4-rail { width: 100% !important; height: 2px !important; background: rgba(255,255,255,0.08) !important; border-radius: 1px !important; overflow: hidden !important; }
-    .c4-fill { width: 0% !important; height: 100% !important; background: #f43f5e !important; transition: width 0.2s linear !important; }
-    .c4-msg {
-      font-family: monospace !important; font-size: 10px !important; color: #71717a !important;
-      white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
-      min-height: 14px !important;
-    }
-  `;
-  (document.head || document.documentElement).appendChild(style);
-
-  // --- HTML Build ---
+  // Full HUD Panel
   const hud = document.createElement('div');
-  hud.id = HUD_ID;
-  hud.innerHTML = `
-    <div class="c4-bar-top" id="c4-drag">
-      <div class="c4-brand-wrap">
-        <div class="c4-dot-live"></div>
-        <span class="c4-brand-txt">ARGON // C4</span>
-      </div>
-      <button class="c4-btn-x" id="c4-x">×</button>
-    </div>
+  hud.className = 'c4-hud';
+  hud.innerHTML=`<div class="c4-header" id="drag"><div class="c4-title-wrap"><div class="c4-dot"></div><span class="c4-title">ARGON CONTROLLER</span></div><button type="button" class="c4-close" id="x">×</button></div><div class="c4-banner"><svg viewBox="0 0 320 110" preserveAspectRatio="none"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#18181b"/><stop offset="60%" stop-color="#09090b"/><stop offset="100%" stop-color="#020203"/></linearGradient><linearGradient id="neon" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f43f5e" stop-opacity="0.8"/><stop offset="50%" stop-color="#fb7185" stop-opacity="0.3"/><stop offset="100%" stop-color="#000000" stop-opacity="0"/></linearGradient></defs><rect width="320" height="110" fill="url(#bg)"/><path d="M-20,110 L140,-10 L160,-10 L0,110 Z" fill="url(#neon)"/><path d="M80,110 L240,-10 L260,-10 L100,110 Z" fill="url(#neon)" opacity="0.4"/><circle cx="270" cy="55" r="42" fill="none" stroke="#f43f5e" stroke-width="1" opacity="0.25"/><circle cx="270" cy="55" r="32" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.15"/><line x1="210" y1="48" x2="330" y2="48" stroke="#f43f5e" stroke-width="2" opacity="0.7"/><line x1="230" y1="52" x2="310" y2="52" stroke="#ffffff" stroke-width="1" opacity="0.8"/></svg><div class="c4-tag">STAGE CONTROLLER</div><div class="c4-subhead">AUTONOMOUS BYPASS</div></div><div class="c4-body"><div class="c4-clock-box"><span class="c4-clock-lbl">INTERVAL</span><span class="c4-digits" id="clock">00:00</span></div><div class="c4-pills"><button type="button" class="c4-pill active" data-s="0">0s (Inst)</button><button type="button" class="c4-pill" data-s="5">5s</button><button type="button" class="c4-pill" data-s="15">15s</button><button type="button" class="c4-pill" data-s="30">30s</button></div><div class="c4-input-row"><span>Custom Interval</span><div><input class="c4-num-in" id="sec" type="number" min="0" value="0"><span style="margin-left:4px;color:#a1a1aa;font-weight:700;">SEC</span></div></div><button type="button" class="c4-btn-exec" id="run">EXECUTE BYPASS</button><button type="button" class="c4-btn-copy" id="dump">COPY PROTOCOL LOG (<span id="cnt">0</span>)</button><div class="c4-rail"><div class="c4-fill" id="bar"></div></div><div class="c4-msg" id="msg">&gt; ready. sniffer active.</div></div>`;
+  shadow.appendChild(hud);
 
-    <div class="c4-visual">
-      <img src="https://raw.githubusercontent.com/novachrono09/c4-bypass/main/assets/banner.jpg"
-           referrerpolicy="no-referrer"
-           onerror="this.src='https://wallpapercave.com/wp/wp12166668.jpg'" />
-      <div class="c4-visual-mask"></div>
-      <div class="c4-tag">STAGE BYPASS</div>
-      <div class="c4-subhead">SESSION CONTROLLER</div>
-    </div>
+  // Mount to documentElement (guaranteed to succeed even if body is null)
+  (document.documentElement || document.body).appendChild(host);
 
-    <div class="c4-content">
-      <div class="c4-clock-box">
-        <span class="c4-clock-lbl">INTERVAL</span>
-        <span class="c4-digits" id="c4-clock">00:00</span>
-      </div>
+  // State & Controls
+  let isHudOpen = true;
+  fab.onclick = () => {
+    isHudOpen = !isHudOpen;
+    hud.style.display = isHudOpen ? 'flex' : 'none';
+  };
+  hud.querySelector('#x').onclick = () => {
+    isHudOpen = false;
+    hud.style.display = 'none';
+  };
 
-      <div class="c4-pills">
-        <button type="button" class="c4-pill active" data-s="0">0s (Inst)</button>
-        <button type="button" class="c4-pill" data-s="5">5s</button>
-        <button type="button" class="c4-pill" data-s="15">15s</button>
-        <button type="button" class="c4-pill" data-s="30">30s</button>
-      </div>
-
-      <div class="c4-input-row">
-        <span>Custom Interval</span>
-        <div>
-          <input class="c4-num-in" id="c4-sec" type="number" min="0" value="0">
-          <span style="margin-left:3px;">SEC</span>
-        </div>
-      </div>
-
-      <button type="button" class="c4-btn-exec" id="c4-run">EXECUTE BYPASS</button>
-      <button type="button" class="c4-btn-copy" id="c4-dump">COPY PROTOCOL LOG (<span id="c4-cnt">0</span>)</button>
-
-      <div class="c4-rail"><div class="c4-fill" id="c4-bar"></div></div>
-      <div class="c4-msg" id="c4-msg">> ready. sniffer active.</div>
-    </div>
-  `;
-  (document.body || document.documentElement).appendChild(hud);
-
-  // --- Touch & Mouse Draggable ---
-  const dragHandle = hud.querySelector('#c4-drag');
-  let isMoving = false, startX = 0, startY = 0, hudX = 0, hudY = 0;
+  // Dragging logic for HUD & FAB
+  const dragHandle = hud.querySelector('#drag');
+  let isMoving = false, startX = 0, startY = 0, initialLeft = 0, initialTop = 0;
 
   function onPointerStart(e) {
     isMoving = true;
@@ -229,17 +82,17 @@
     startX = clientX;
     startY = clientY;
     const rect = hud.getBoundingClientRect();
-    hudX = rect.left;
-    hudY = rect.top;
-    e.preventDefault();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+    if (e.cancelable) e.preventDefault();
   }
 
   function onPointerMove(e) {
     if (!isMoving) return;
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const newLeft = hudX + (clientX - startX);
-    const newTop = hudY + (clientY - startY);
+    const newLeft = initialLeft + (clientX - startX);
+    const newTop = initialTop + (clientY - startY);
     hud.style.left = Math.max(4, Math.min(window.innerWidth - hud.offsetWidth - 4, newLeft)) + 'px';
     hud.style.top = Math.max(4, Math.min(window.innerHeight - hud.offsetHeight - 4, newTop)) + 'px';
     hud.style.right = 'auto';
@@ -250,24 +103,21 @@
   dragHandle.addEventListener('mousedown', onPointerStart);
   window.addEventListener('mousemove', onPointerMove);
   window.addEventListener('mouseup', onPointerEnd);
-
   dragHandle.addEventListener('touchstart', onPointerStart, { passive: false });
   window.addEventListener('touchmove', onPointerMove, { passive: true });
   window.addEventListener('touchend', onPointerEnd);
 
-  // --- Controls & Handlers ---
-  const inSec = hud.querySelector('#c4-sec');
-  const clock = hud.querySelector('#c4-clock');
-  const bar = hud.querySelector('#c4-bar');
-  const txtMsg = hud.querySelector('#c4-msg');
-  const btnRun = hud.querySelector('#c4-run');
-  const btnDump = hud.querySelector('#c4-dump');
-  const txtCnt = hud.querySelector('#c4-cnt');
-
-  hud.querySelector('#c4-x').onclick = () => hud.remove();
+  // UI elements
+  const inSec = hud.querySelector('#sec');
+  const clock = hud.querySelector('#clock');
+  const bar = hud.querySelector('#bar');
+  const txtMsg = hud.querySelector('#msg');
+  const btnRun = hud.querySelector('#run');
+  const btnDump = hud.querySelector('#dump');
+  const txtCnt = hud.querySelector('#cnt');
 
   setInterval(() => {
-    if (txtCnt) txtCnt.textContent = window._c4_trace.length;
+    if (txtCnt && window._c4_trace) txtCnt.textContent = window._c4_trace.length;
   }, 400);
 
   hud.querySelectorAll('.c4-pill').forEach(pill => {
@@ -321,7 +171,6 @@
     } catch (_) {}
   }
 
-  // --- Bypass Pipeline ---
   btnRun.onclick = async () => {
     const totalDuration = parseInt(inSec.value, 10) || 0;
     btnRun.disabled = true;
@@ -352,7 +201,6 @@
     }
 
     if (!sessionRes || !sessionRes.ok) return false;
-
     const sessionData = await sessionRes.json();
     const token = sessionData.sessionToken || sessionData.token;
     const totalStages = sessionData.totalStage || 1;
@@ -377,6 +225,7 @@
 
     for (let stage = 1; stage <= totalStages; stage++) {
       txtMsg.textContent = `> advancing stage [${stage}/${totalStages}]...`;
+
       const payload = { '0': { json: { token, stageId: stage } } };
       const endpoint = `${window.location.origin}/api/trpc/linkSession.nextStage?batch=1&input=${encodeURIComponent(JSON.stringify(payload))}`;
 
@@ -433,6 +282,7 @@
       '#btn-main', '#get-link', '#continue', '.btn-captcha',
       'a[href*="/api/redirect"]', 'button[disabled]'
     ];
+
     for (const sel of selectors) {
       document.querySelectorAll(sel).forEach(t => {
         if (t.disabled) t.disabled = false;
