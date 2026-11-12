@@ -378,15 +378,15 @@
 
         <div class="c4-pill-grid">
           <button type="button" class="c4-pill-btn" data-s="0">0s (Inst)</button>
-          <button type="button" class="c4-pill-btn active" data-s="5">5s (Safe)</button>
-          <button type="button" class="c4-pill-btn" data-s="15">15s</button>
           <button type="button" class="c4-pill-btn" data-s="30">30s</button>
+          <button type="button" class="c4-pill-btn" data-s="60">60s</button>
+          <button type="button" class="c4-pill-btn active" data-s="80">80s (Safe)</button>
         </div>
 
         <div class="c4-interval-row">
-          <span>Custom Interval</span>
+          <span>Anti-Detect Pacing</span>
           <div>
-            <input class="c4-interval-input" id="c4-custom-sec" type="number" min="0" value="5">
+            <input class="c4-interval-input" id="c4-custom-sec" type="number" min="0" value="80">
             <span style="margin-left:4px;color:#a1a1aa;font-weight:700;">SEC</span>
           </div>
         </div>
@@ -497,7 +497,7 @@
       const sec = String(s % 60).padStart(2, '0');
       clock.textContent = `${min}:${sec}`;
     }
-    setTimeDisplay(parseInt(inSec.value, 10) || 5);
+    setTimeDisplay(parseInt(inSec.value, 10) || 80);
 
     btnDump.addEventListener('click', e => {
       e.preventDefault();
@@ -555,6 +555,8 @@
       let currentStageIndex = parseInt(searchParams.get('i'), 10) || 1;
       let totalStages = 6;
       let stageId = 0;
+      let userId = 0;
+      let linkId = 0;
 
       try {
         const sessionRes = await fetch(`${window.location.origin}/api/session-info`, {
@@ -567,6 +569,8 @@
           if (sData.totalStage) totalStages = Number(sData.totalStage);
           if (sData.stageNumber) currentStageIndex = Number(sData.stageNumber);
           if (sData.stageId) stageId = sData.stageId;
+          if (sData.userId) userId = sData.userId;
+          if (sData.linkId) linkId = sData.linkId;
         }
       } catch (_) {}
 
@@ -606,6 +610,37 @@
           // 200ms anti-flood pacing
           await new Promise(r => setTimeout(r, 200));
         }
+
+        // Emit telemetry click event to satisfy server-side validation audit
+        try {
+          const compName = (stage === totalStages) ? 'finish-button' : 'redirect-button';
+          const analyticsPayload = {
+            '0': {
+              json: {
+                type: 'click',
+                pathname: '',
+                payload: {
+                  componente: compName,
+                  userId: userId,
+                  stage: stage,
+                  linkId: linkId
+                },
+                stage: stage,
+                userId: userId
+              }
+            }
+          };
+          fetch(`${window.location.origin}/api/trpc/analytics.trackEvent?batch=1`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'trpc-accept': 'application/jsonl',
+              'x-trpc-source': 'nextjs-react'
+            },
+            body: JSON.stringify(analyticsPayload)
+          }).catch(() => {});
+        } catch (_) {}
 
         const payload = {
           '0': {
