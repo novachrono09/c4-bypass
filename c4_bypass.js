@@ -549,12 +549,12 @@
     });
 
     async function runTrpcBypass(delaySec) {
-      // 1. Resolve Token from URL query parameters (?t= or ?token=) or /api/session-info
+      // 1. Resolve Token and Stage metadata from /api/session-info or URL
       const searchParams = new URLSearchParams(window.location.search);
       let token = searchParams.get('t') || searchParams.get('token');
       let currentStageIndex = parseInt(searchParams.get('i'), 10) || 1;
-      let totalStages = 2;
-      let currentStageId = currentStageIndex;
+      let totalStages = 6;
+      let stageId = 0;
 
       try {
         const sessionRes = await fetch(`${window.location.origin}/api/session-info`, {
@@ -564,9 +564,9 @@
         if (sessionRes && sessionRes.ok) {
           const sData = await sessionRes.json();
           if (sData.sessionToken || sData.token) token = sData.sessionToken || sData.token;
-          if (sData.totalStage) totalStages = sData.totalStage;
-          if (sData.stageNumber) currentStageIndex = sData.stageNumber;
-          if (sData.stageId) currentStageId = sData.stageId;
+          if (sData.totalStage) totalStages = Number(sData.totalStage);
+          if (sData.stageNumber) currentStageIndex = Number(sData.stageNumber);
+          if (sData.stageId) stageId = sData.stageId;
         }
       } catch (_) {}
 
@@ -577,13 +577,13 @@
       }
 
       txtMsg.textContent = `> token acquired. [${currentStageIndex}/${totalStages}]`;
-      bar.style.width = '20%';
+      bar.style.width = '15%';
 
       let destinationLink = null;
       const numStagesToRun = Math.max(1, (totalStages - currentStageIndex + 1));
       const perStageDelay = delaySec > 0 ? delaySec / numStagesToRun : 0;
 
-      // In-place multi-stage bypass loop: NEVER RELOAD, NEVER NAVIGATE UNTIL FINAL KEY
+      // In-place multi-stage loop: stageId remains the persistent Prisma DB record ID
       for (let stage = currentStageIndex; stage <= totalStages; stage++) {
         txtMsg.textContent = `> advancing stage [${stage}/${totalStages}]...`;
 
@@ -602,6 +602,9 @@
               }
             }, 100);
           });
+        } else if (stage > currentStageIndex) {
+          // 200ms anti-flood pacing
+          await new Promise(r => setTimeout(r, 200));
         }
 
         const payload = {
@@ -609,7 +612,7 @@
             json: {
               token: token,
               progress: stage + 1,
-              stageId: currentStageId
+              stageId: stageId
             }
           }
         };
@@ -648,40 +651,34 @@
         }
 
         const rawText = await res.text();
-        let stageData = null;
 
-        try {
-          const parsed = JSON.parse(rawText);
-          stageData = parsed[0]?.result?.data?.json || parsed.result?.data?.json || parsed[0]?.result?.data || parsed;
-        } catch (_) {
-          const mDest = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
-          const mUrl = rawText.match(/"url"\s*:\s*"([^"]+)"/);
-          stageData = {
-            destinationLink: mDest ? mDest[1].replace(/\\/g, '') : null,
-            url: mUrl ? mUrl[1].replace(/\\/g, '') : null
-          };
+        // Robust scan for destinationLink and url (handles single-line and multi-line JSONL)
+        const mDest = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
+        if (mDest && mDest[1] && mDest[1] !== 'null' && mDest[1] !== 'undefined') {
+          destinationLink = mDest[1].replace(/\\/g, '');
         }
 
-        if (stageData) {
-          if (stageData.destinationLink) {
-            destinationLink = stageData.destinationLink;
-            break;
-          }
-          if (stageData.token) token = stageData.token;
-          if (stageData.stageId) currentStageId = stageData.stageId;
-          else currentStageId = stage + 1;
-          if (stageData.url && stageData.url.includes('?t=')) {
+        if (!destinationLink) {
+          const lines = rawText.split('\n');
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
             try {
-              const u = new URL(stageData.url, window.location.origin);
-              const ut = u.searchParams.get('t');
-              if (ut) token = ut;
+              const p = JSON.parse(trimmed);
+              const dataObj = p[0]?.result?.data?.json || p.result?.data?.json || p[0]?.result?.data || p.json || p;
+              if (dataObj && typeof dataObj.destinationLink === 'string' && dataObj.destinationLink.startsWith('http')) {
+                destinationLink = dataObj.destinationLink;
+                break;
+              }
             } catch (_) {}
           }
-        } else {
-          currentStageId = stage + 1;
         }
 
-        const progressPct = Math.min(95, Math.floor(20 + ((stage - currentStageIndex + 1) / numStagesToRun) * 75));
+        if (destinationLink) {
+          break;
+        }
+
+        const progressPct = Math.min(95, Math.floor(15 + ((stage - currentStageIndex + 1) / numStagesToRun) * 80));
         bar.style.width = `${progressPct}%`;
       }
 
