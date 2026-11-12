@@ -499,6 +499,29 @@
     }
     setTimeDisplay(parseInt(inSec.value, 10) || 80);
 
+    // Initial passive probe for active session on load
+    async function probeSession() {
+      try {
+        const res = await fetch(`${window.location.origin}/api/session-info`, {
+          method: 'GET',
+          credentials: 'include'
+        });
+        if (res && res.ok) {
+          const d = await res.json();
+          if (d && (d.hasSession || d.sessionToken)) {
+            const st = d.stageNumber || 1;
+            const tot = d.totalStage || 6;
+            txtMsg.textContent = `> session active: stage [${st}/${tot}]`;
+            bar.style.width = `${Math.floor((st / tot) * 25)}%`;
+            return d;
+          }
+        }
+      } catch (_) {}
+      txtMsg.textContent = '> ready. sniffer active.';
+      return null;
+    }
+    probeSession();
+
     btnDump.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
@@ -589,9 +612,39 @@
 
       // In-place multi-stage loop: stageId remains the persistent Prisma DB record ID
       for (let stage = currentStageIndex; stage <= totalStages; stage++) {
-        txtMsg.textContent = `> advancing stage [${stage}/${totalStages}]...`;
+        txtMsg.textContent = `> stage [${stage}/${totalStages}]: logging visit...`;
 
-        // Optional per-stage interval countdown
+        // 1. Emit telemetry pageView event FIRST
+        try {
+          const pvPayload = {
+            '0': {
+              json: {
+                type: 'pageView',
+                pathname: '',
+                payload: {
+                  userId: userId,
+                  stage: stage,
+                  linkId: linkId,
+                  referer: null
+                },
+                stage: stage,
+                userId: userId
+              }
+            }
+          };
+          fetch(`${window.location.origin}/api/trpc/analytics.trackEvent?batch=1`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'trpc-accept': 'application/jsonl',
+              'x-trpc-source': 'nextjs-react'
+            },
+            body: JSON.stringify(pvPayload)
+          }).catch(() => {});
+        } catch (_) {}
+
+        // 2. Anti-detect pacing interval
         if (perStageDelay > 0) {
           let remaining = Math.ceil(perStageDelay);
           const startTime = Date.now();
@@ -607,41 +660,13 @@
             }, 100);
           });
         } else if (stage > currentStageIndex) {
-          // 200ms anti-flood pacing
+          // Anti-flood micro-pacing
           await new Promise(r => setTimeout(r, 200));
         }
 
-        // Emit telemetry click event to satisfy server-side validation audit
-        try {
-          const compName = (stage === totalStages) ? 'finish-button' : 'redirect-button';
-          const analyticsPayload = {
-            '0': {
-              json: {
-                type: 'click',
-                pathname: '',
-                payload: {
-                  componente: compName,
-                  userId: userId,
-                  stage: stage,
-                  linkId: linkId
-                },
-                stage: stage,
-                userId: userId
-              }
-            }
-          };
-          fetch(`${window.location.origin}/api/trpc/analytics.trackEvent?batch=1`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'trpc-accept': 'application/jsonl',
-              'x-trpc-source': 'nextjs-react'
-            },
-            body: JSON.stringify(analyticsPayload)
-          }).catch(() => {});
-        } catch (_) {}
+        txtMsg.textContent = `> advancing stage [${stage}/${totalStages}]...`;
 
+        // 3. Query nextStage
         const payload = {
           '0': {
             json: {
@@ -686,6 +711,37 @@
         }
 
         const rawText = await res.text();
+
+        // 4. Emit telemetry click event AFTER nextStage completes
+        try {
+          const compName = (stage === totalStages) ? 'finish-button' : 'redirect-button';
+          const clickPayload = {
+            '0': {
+              json: {
+                type: 'click',
+                pathname: '',
+                payload: {
+                  componente: compName,
+                  userId: userId,
+                  stage: stage,
+                  linkId: linkId
+                },
+                stage: stage,
+                userId: userId
+              }
+            }
+          };
+          fetch(`${window.location.origin}/api/trpc/analytics.trackEvent?batch=1`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'trpc-accept': 'application/jsonl',
+              'x-trpc-source': 'nextjs-react'
+            },
+            body: JSON.stringify(clickPayload)
+          }).catch(() => {});
+        } catch (_) {}
 
         // Robust scan for destinationLink and url (handles single-line and multi-line JSONL)
         const mDest = rawText.match(/"destinationLink"\s*:\s*"([^"]+)"/);
